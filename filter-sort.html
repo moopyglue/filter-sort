@@ -9,11 +9,9 @@
 <body>
 
 <h2>My Customers</h2>
-<input type="text" id="myInput" onkeyup="filterTable('myTable',this.value,2)" placeholder="Search for names.." title="Type in a name">
+<input type="text" id="myInput" onkeyup="return press(event,13,function(){ filterTable('myTable','myInput',2 )} )" placeholder="Type in your search string..." title="Type in your search">
 <table id=myTable></table>
-<script>
-dataToTable(data,"myTable","name,horsepower,acceleration");
-</script>
+<script>   dataToTable(data,"myTable","name,horsepower,acceleration");   </script>
 
 </body>
 </html>

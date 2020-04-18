@@ -42,13 +42,13 @@ function dataToTable(data,tabID,fields="") {
     document.getElementById(tabID).innerHTML = str;
 }
 
-function filterTable(tableID,searchString,headerRows=1) {
+function filterTable(tableID,searchID,headerRows=1) {
 
     var td, txtValue, hid;
 
-    var filter = document.getElementById("myInput").value.toUpperCase();
+    var filter = document.getElementById(searchID).value.toUpperCase();
     var tr = document.getElementById(tableID).getElementsByTagName("tr");
-    console.log(tableID,searchString,headerRows);
+    console.log(tableID,filter,headerRows);
     
     // loop through each table row
     for (i = headerRows; i < tr.length; i++) {
@@ -68,3 +68,11 @@ function filterTable(tableID,searchString,headerRows=1) {
     }
 }
 
+
+function press(e,keycode,f) {
+    var evt = e || window.event;
+    if (evt.keyCode==keycode ) {
+      f();
+      return false;
+    }
+  }
