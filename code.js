@@ -87,7 +87,7 @@ function press(e,keycode,f) {
 //
 function tokenize(str) {
 
-    var operands = []
+    var tokens = []
     str = str.trim() 
     var s = ''
     var index = 0
@@ -97,7 +97,7 @@ function tokenize(str) {
     var re_quote = new RegExp(/["'\/]/)
     var re_push_operand = new RegExp(/[()]/)
     var re_operand_end = new RegExp(/[ ()]/)
-    var re_and_or_not = new RegExp(/^(?:and|or|not)$/i)
+    var re_and_or_not = new RegExp(/^(?:and|or|not|&&|\|\|)$/i)
 
     // loop through each character of the provided string
     while ( index < str.length ) {
@@ -109,10 +109,19 @@ function tokenize(str) {
         if ( c.match(re_wspace) ) continue;
         
         // capture charecters which are on their own are avalid operand e.g. brackets
-        if ( c.match(re_push_operand) ) {
-            operands.push( { type:"operand", style:c } )
+        if ( c == "(" ) {
+            tokens.push( { type:"leftp", style:c } )
             continue
         }
+        if ( c == ")" ) {
+            tokens.push( { type:"rightp", style:c } )
+            continue
+        }
+        if ( c == "!" ) {
+            tokens.push( { type:"operator", style:"not" } )
+            continue
+        }
+
 
         // Deal with quoted strings (single or double quotes)
         if ( c.match(re_quote) ) {
@@ -123,17 +132,17 @@ function tokenize(str) {
             }
             if ( str[index] == c ) {
                 index++
-                operands.push( { type:"operand", value:s, style:style })
+                tokens.push( { type:"operand", value:s, style:style })
                 s=""
                 if ( index < str.length && ! str[index].match(re_operand_end)  ) {
                     console.log("quotes in the middle of a operand : index="+str[index])
-                    console.log(operands)
+                    console.log(tokens)
                     return []        
                 }
                 continue
             } else {
                 console.log("unmatched quote "+c)
-                console.log(operands)
+                console.log(tokens)
                 return []    
             }
         }
@@ -144,7 +153,7 @@ function tokenize(str) {
             c = str[index]
             if ( c.match(re_quote) ) {
                 console.log("quotes in the middle of a operand : index="+c)
-                console.log(operands)
+                console.log(tokens)
                 return []                  
             }           
             if ( c.match(re_operand_end) )  break;
@@ -153,32 +162,34 @@ function tokenize(str) {
         }
         if( s.match(re_and_or_not) ) {
             // identify keyword types and make lower case types
-            operands.push( { type:"operator", style:s.toLowerCase() } )
+            // FIX ME - does not work if TOUCHING operand
+            if( s == "&&" ) s="and"
+            if( s == "||" ) s="or"
+            tokens.push( { type:"operator", style:s.toLowerCase() } )
         } else {
             // add as a standard value operand
-            operands.push( { type:"operand", value:s, style:"normal" })
+            tokens.push( { type:"operand", value:s, style:"normal" })
         }
         s=""
 
     }
 
     // Add in implied AND statements where no operator
-    var expand_operands = []
-    while ( operands.length >= 2 ) {
+    var expand = []
+    while ( tokens.length >= 2 ) {
+        expand.push( tokens[0] )
         if ( 
-            ( operands[0]["type"]=="operand" && operands[1]["type"]=="operand" ) || 
-            ( operands[0]["type"]== ")"    && operands[1]["type"]=="operand" ) || 
-            ( operands[0]["type"]=="operand" && operands[1]["type"]=="(" ) 
+            ( tokens[0]["type"]=="operand" && tokens[1]["type"]=="operand" ) || 
+            ( tokens[0]["type"]=="rightp"  && tokens[1]["type"]=="operand" ) || 
+            ( tokens[0]["type"]=="operand" && tokens[1]["type"]=="leftp" ) 
         ) {
-            expand_operands.push( operands.shift() )
-            expand_operands.push( { type:"operator", style:"and"} )
-        } else {
-            expand_operands.push( operands.shift() )
+            expand.push( { type:"operator", style:"and"} )
         }
+        tokens.shift()
     }
-    expand_operands.push( operands.shift() )
+    expand.push( tokens.shift() )
 
-    return expand_operands
+    return expand
 }
 
 // create quick lookup contants for speed
