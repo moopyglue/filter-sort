@@ -1,4 +1,13 @@
 
+// TODO
+//
+//  - it is asummed that tokens are sytactically correct but it is not checked
+//      (e.g. last token can be a NOT or first tokern can be an OR etc...)
+//  - need to enable brackets handling
+//      (how do we difernciate between a processed AND and an unprocessed AND?)
+//
+
+
 function dataToTable(data,tabID,fields="") {
 
     var flist, h,i,j,k,l ;
@@ -24,7 +33,7 @@ function dataToTable(data,tabID,fields="") {
     str += "</tr>\n"
     
     // build body
-    for ( k=2 ; k<data.length ; k++ ) {
+    for ( k=1 ; k<data.length ; k++ ) {
         str += "<tr>"
         for( l=0 ; l< collist.length ; l++ ) {   
             str += "<td>"+data[k][collist[l]]+"</td>";
@@ -40,10 +49,16 @@ function filterTable(tableID,searchID) {
 
     var td, txtValue, hid;
 
-    var filter = parse(document.getElementById(searchID).value);
     var tr = document.getElementById(tableID).getElementsByTagName("tr");
     var fields = document.getElementById(tableID).getAttribute("data-fields").split(",")
-    console.log(tableID,filter);
+    var filter = parse(document.getElementById(searchID).value);
+    console.log(filter)
+    if( filter != null && filter["type"] == "error") {
+        console.log(filter["message"])
+        return filter["message"]
+    }
+
+    console.log("filterTable()",tableID,filter);
     
     if( filter == null ) {
         // display all rows
@@ -89,88 +104,106 @@ function tokenize(str) {
 
     var tokens = []
     str = str.trim() 
-    var s = ''
-    var index = 0
 
     // define regular expressions used here
     var re_wspace = new RegExp(/ /)
     var re_quote = new RegExp(/["'\/]/)
+    var re_quote_only = new RegExp(/["']/)
     var re_push_operand = new RegExp(/[()]/)
     var re_operand_end = new RegExp(/[ ()]/)
-    var re_and_or_not = new RegExp(/^(?:and|or|not|&&|\|\|)$/i)
+    var re_and_or_not = new RegExp(/^(?:and|or|not)$/i)
 
     // loop through each character of the provided string
-    while ( index < str.length ) {
+    while ( true ) {
         
-        var c = str[index];
-        index++;
-
-        // skip white space (when not in quotes)
-        if ( c.match(re_wspace) ) continue;
+        // skip white space 
+        str = str.trim()
+        if( str.length == 0 ) break
         
         // capture charecters which are on their own are avalid operand e.g. brackets
-        if ( c == "(" ) {
-            tokens.push( { type:"leftp", style:c } )
+        if ( str.substring(0,1) == "(" ) {
+            tokens.push( { type:"leftp", style:str[0] } )
+            str = str.substring(1)
             continue
         }
-        if ( c == ")" ) {
-            tokens.push( { type:"rightp", style:c } )
+        if ( str.substring(0,1) == ")" ) {
+            tokens.push( { type:"rightp", style:str[0] } )
+            str = str.substring(1)
             continue
         }
-        if ( c == "!" ) {
+        if ( str.substring(0,1) == "!" ) {
             tokens.push( { type:"operator", style:"not" } )
+            str = str.substring(1)
             continue
         }
-
+        if ( str.substring(0,2) == "&&" ) {
+            tokens.push( { type:"operator", style:"and" } )
+            str = str.substring(2)
+            continue
+        }        
+        if ( str.substring(0,2) == "||" ) {
+            tokens.push( { type:"operator", style:"or" } )
+            str = str.substring(2)
+            continue
+        }
 
         // Deal with quoted strings (single or double quotes)
-        if ( c.match(re_quote) ) {
+        if ( str[0].match(re_quote) ) {
+
             var style = "quotes"
+            var result = ""
+            var c = str[0]
             if ( c == "/" ) style="match"
-            while ( index < str.length && str[index] != c ) {
-                s += str[index++]
-            }
-            if ( str[index] == c ) {
-                index++
-                tokens.push( { type:"operand", value:s, style:style })
-                s=""
-                if ( index < str.length && ! str[index].match(re_operand_end)  ) {
-                    console.log("quotes in the middle of a operand : index="+str[index])
-                    console.log(tokens)
-                    return []        
+
+            str = str.substring(1)
+            while ( str.length > 0 ) {
+
+                if( str[0] == "\\" ) {
+                    var x = escaped(str)
+                    result += x[0]
+                    str = str.substring(x[1])
+                    continue
                 }
-                continue
-            } else {
-                console.log("unmatched quote "+c)
-                console.log(tokens)
-                return []    
+
+                if( str[0] == c ) {
+                    str = str.substring(1)
+                    tokens.push( { type:"operand", value:result, style:style })
+                    c=""
+                    if ( str.length>0 && ! str[0].match(re_operand_end)  ) {
+                        console.log(tokens)
+                        return [ {type:"error",message:"quotes in the middle of a operand"} ]
+                    }
+                    break
+                }
+
+                result+=str.substring(0,1)
+                str=str.substring(1)
             }
+
+            if ( c != "" ) {
+                console.log(tokens)
+                return [ {type:"error",message:"unmatched quote"} ]
+            }
+            continue
         }
 
         // Deal with normal operands
-        s += c
-        while ( index < str.length ) {
-            c = str[index]
-            if ( c.match(re_quote) ) {
-                console.log("quotes in the middle of a operand : index="+c)
+        var result = ""
+        while ( str.length>0 ) {
+            if ( str[0].match(re_quote_only) ) {
                 console.log(tokens)
-                return []                  
+                return [ {type:"error",message:"quotes in the middle of a operand"} ]               
             }           
-            if ( c.match(re_operand_end) )  break;
-            s += c
-            index++
+            if ( str[0].match(re_operand_end) )  break;
+            result+=str.substring(0,1)
+            str=str.substring(1)
         }
-        if( s.match(re_and_or_not) ) {
-            // identify keyword types and make lower case types
-            // FIX ME - does not work if TOUCHING operand
-            if( s == "&&" ) s="and"
-            if( s == "||" ) s="or"
-            tokens.push( { type:"operator", style:s.toLowerCase() } )
+        if( result.match(re_and_or_not) ) {
+            tokens.push( { type:"operator", style:result.toLowerCase() } )
         } else {
             // add as a standard value operand
-            tokens.push( { type:"operand", value:s, style:"normal" })
+            tokens.push( { type:"operand", value:result, style:"normal" })
         }
-        s=""
 
     }
 
@@ -181,6 +214,8 @@ function tokenize(str) {
         if ( 
             ( tokens[0]["type"]=="operand" && tokens[1]["type"]=="operand" ) || 
             ( tokens[0]["type"]=="rightp"  && tokens[1]["type"]=="operand" ) || 
+            ( tokens[0]["type"]=="operand" && tokens[1]["style"]=="not" ) || 
+            ( tokens[0]["type"]=="rightp"  && tokens[1]["style"]=="not" ) || 
             ( tokens[0]["type"]=="operand" && tokens[1]["type"]=="leftp" ) 
         ) {
             expand.push( { type:"operator", style:"and"} )
@@ -192,35 +227,104 @@ function tokenize(str) {
     return expand
 }
 
+function escaped (s) {
+    // needs more work - rhight now just allows escaping of single non-special chars
+    if( s[0] != "\\" || s.length < 2 ) return [ "\\",1 ]
+    return [s.substr(1,1),2]
+}
+
 // create quick lookup contants for speed
 
-const _OPERAND_NORMAL_  = 1
-const _OPERAND_QUOTE_   = 2
-const _OPERAND_MATCH_   = 3
-const _OPERATOR_AND_    = 4
-const _OPERATOR_OR_     = 5
-const _OPERATOR_NOT_    = 6
+const _OPERAND_NORMAL_  = 11
+const _OPERAND_QUOTE_   = 12
+const _OPERAND_MATCH_   = 13
+const _OPERATOR_OR_     = 21
+const _OPERATOR_AND_    = 22
+const _OPERATOR_NOT_    = 23
+const _LEFT_PARENTH_    = 31
+const _RIGHT_PARENTH_   = 32
 
 var ops_lookup = {
-    "operand:normal":_OPERAND_NORMAL_,
-    "operand:quote" :_OPERAND_QUOTE_,
-    "operand:match" :_OPERAND_MATCH_,
-    "operator:and"  :_OPERATOR_AND_,  
-    "operator:or"   :_OPERATOR_OR_,  
-    "operator:not"  :_OPERATOR_NOT_,  
+    "operand:normal" :_OPERAND_NORMAL_,
+    "operand:quotes" :_OPERAND_QUOTE_,
+    "operand:match"  :_OPERAND_MATCH_,
+    "operator:and"   :_OPERATOR_AND_,  
+    "operator:or"    :_OPERATOR_OR_,  
+    "operator:not"   :_OPERATOR_NOT_,
+    "leftp:("        :_LEFT_PARENTH_,
+    "rightp:)"       :_RIGHT_PARENTH_,
 }
 
 // parse()
 // operandize a seach string and then 'reverse polish' it into fast
 // search structure
 function parse(str) {
+
+    var a=0, b=0
     var tokenized = tokenize(str)
+
     if( typeof tokenized[0] == "undefined" ) return null;
+
     for( n in tokenized ) {
         tokenized[n]["code"] = ops_lookup[tokenized[n]["type"]+":"+tokenized[n]["style"]]
     }
-    console.log("parse()",tokenized)
-    return tokenized[0]
+
+    // expand brackets
+
+    // expand NOT 
+    // we scan list in reverse to allow NOT of NOT of NOT...
+    var NOTtoken = []
+    while ( a = tokenized.pop() ) {
+        if( a["code"] != _OPERATOR_NOT_ ) {
+            NOTtoken.unshift(a)
+            continue
+        }
+        b = NOTtoken.shift()
+        if( b["code"] == _OPERATOR_NOT_) {
+            NOTtoken.unshift( b["expression"] )
+        } else {
+            NOTtoken.unshift( { code:_OPERATOR_NOT_, expression: b } )
+        }
+    }
+
+    // expand AND 
+    var ANDtoken = []
+    while ( a = NOTtoken.shift() ) {
+        if( a["code"] != _OPERATOR_AND_ ) {
+            ANDtoken.push(a)
+            continue
+        }
+        b = ANDtoken.pop()
+        a = NOTtoken.shift()
+        if( b["code"]==_OPERATOR_AND_ ) {
+            b["expressions"].push(a)
+            ANDtoken.push( b )
+        } else {
+            ANDtoken.push( { code:_OPERATOR_AND_, expressions: [b,a] } )
+        }
+    }
+
+    // expand OR 
+    var ORtoken = []
+    while ( a = ANDtoken.shift() ) {
+        if( a["code"] != _OPERATOR_OR_ ) {
+            ORtoken.push(a)
+            continue
+        }
+        b = ORtoken.pop()
+        a = ANDtoken.shift()
+        if( b["code"]==_OPERATOR_OR_ ) {
+            b["expressions"].push(a)
+            ORtoken.push( b )
+        } else {
+            ORtoken.push( { code:_OPERATOR_OR_, expressions: [b,a] } )
+        }
+    }
+
+    if( ORtoken.length == 0 ) return {type:"error",message:"no tokens found"}           
+    if( ORtoken.length > 1  ) return {type:"error",message:"badly parsed string"}           
+
+    return ORtoken[0]
 }
 
 // evaluate()
@@ -262,19 +366,19 @@ function evaluate(line,filter) {
 
         case _OPERATOR_AND_:
             for( var n in filter["expressions"] ){
-                if( evaluate( filter["expressions"][n]) ) continue
+                if( evaluate(line,filter["expressions"][n]) ) continue
                 return false
             }
             return true
 
         case _OPERATOR_OR_:
             for( var n in filter["expressions"] ){
-                if( evaluate( filter["expressions"][n]) ) return true
+                if( evaluate(line,filter["expressions"][n]) ) return true
             }
             return false
 
         case _OPERATOR_NOT_:
-            return ! evaluate( filter["expression"] )
+            return ! evaluate(line,filter["expression"] )
 
         default:
             console.log("evaluate() unhandled operand/operator type")
