@@ -2,11 +2,15 @@
 // TODO
 //
 //  - it is asummed that tokens are sytactically correct but it is not checked
+//    I have put in ctach statments to avoid crashing during parsing but this 
+//    provides bad error messages + might still allow bad instructions through
 //      (e.g. last token can be a NOT or first tokern can be an OR etc...)
-//  - need to enable brackets handling
-//      (how do we difernciate between a processed AND and an unprocessed AND?)
 //
 
+// pretty print values to console log - used for denugging only.
+function pConLog(...args) {
+    console.log(JSON.stringify(args,null,4))
+}
 
 function dataToTable(data,tabID,fields="") {
 
@@ -51,10 +55,9 @@ function filterTable(tableID,searchID) {
 
     var tr = document.getElementById(tableID).getElementsByTagName("tr");
     var fields = document.getElementById(tableID).getAttribute("data-fields").split(",")
-    var filter = parse(document.getElementById(searchID).value);
-    console.log(filter)
+    var filter = parse( tokenize(document.getElementById(searchID).value) );
+    pConLog(filter)
     if( filter != null && filter["type"] == "error") {
-        console.log(filter["message"])
         return filter["message"]
     }
 
@@ -100,6 +103,30 @@ function press(e,keycode,f) {
 // This generates a operandized array out of search string to enable
 // features liek AND, OR, NOT and BRACKETS for complex queries
 //
+
+// create quick lookup contants for speed
+
+const _OPERAND_NORMAL_  = 11
+const _OPERAND_QUOTE_   = 12
+const _OPERAND_MATCH_   = 13
+const _OPERATOR_OR_     = 21
+const _OPERATOR_AND_    = 22
+const _OPERATOR_NOT_    = 23
+const _LEFT_PARENTH_    = 31
+const _RIGHT_PARENTH_   = 32
+const _EXPRESSION_      = 41
+
+var ops_lookup = {
+    "operand:normal" :_OPERAND_NORMAL_,
+    "operand:quotes" :_OPERAND_QUOTE_,
+    "operand:match"  :_OPERAND_MATCH_,
+    "operator:and"   :_OPERATOR_AND_,  
+    "operator:or"    :_OPERATOR_OR_,  
+    "operator:not"   :_OPERATOR_NOT_,
+    "leftp:("        :_LEFT_PARENTH_,
+    "rightp:)"       :_RIGHT_PARENTH_,
+}
+
 function tokenize(str) {
 
     var tokens = []
@@ -170,7 +197,6 @@ function tokenize(str) {
                     tokens.push( { type:"operand", value:result, style:style })
                     c=""
                     if ( str.length>0 && ! str[0].match(re_operand_end)  ) {
-                        console.log(tokens)
                         return [ {type:"error",message:"quotes in the middle of a operand"} ]
                     }
                     break
@@ -181,7 +207,6 @@ function tokenize(str) {
             }
 
             if ( c != "" ) {
-                console.log(tokens)
                 return [ {type:"error",message:"unmatched quote"} ]
             }
             continue
@@ -191,7 +216,6 @@ function tokenize(str) {
         var result = ""
         while ( str.length>0 ) {
             if ( str[0].match(re_quote_only) ) {
-                console.log(tokens)
                 return [ {type:"error",message:"quotes in the middle of a operand"} ]               
             }           
             if ( str[0].match(re_operand_end) )  break;
@@ -222,7 +246,14 @@ function tokenize(str) {
         }
         tokens.shift()
     }
-    expand.push( tokens.shift() )
+    if( t = tokens.shift() ) expand.push(t)
+
+    // add codes to each type
+    for( n in expand ) {
+        if( typeof expand[n]["code"] == "undefined" ) {
+            expand[n]["code"] = ops_lookup[expand[n]["type"]+":"+expand[n]["style"]]
+        }   
+    }
 
     return expand
 }
@@ -233,93 +264,105 @@ function escaped (s) {
     return [s.substr(1,1),2]
 }
 
-// create quick lookup contants for speed
-
-const _OPERAND_NORMAL_  = 11
-const _OPERAND_QUOTE_   = 12
-const _OPERAND_MATCH_   = 13
-const _OPERATOR_OR_     = 21
-const _OPERATOR_AND_    = 22
-const _OPERATOR_NOT_    = 23
-const _LEFT_PARENTH_    = 31
-const _RIGHT_PARENTH_   = 32
-
-var ops_lookup = {
-    "operand:normal" :_OPERAND_NORMAL_,
-    "operand:quotes" :_OPERAND_QUOTE_,
-    "operand:match"  :_OPERAND_MATCH_,
-    "operator:and"   :_OPERATOR_AND_,  
-    "operator:or"    :_OPERATOR_OR_,  
-    "operator:not"   :_OPERATOR_NOT_,
-    "leftp:("        :_LEFT_PARENTH_,
-    "rightp:)"       :_RIGHT_PARENTH_,
-}
 
 // parse()
 // operandize a seach string and then 'reverse polish' it into fast
 // search structure
-function parse(str) {
+function parse(tokenized) {
 
     var a=0, b=0
-    var tokenized = tokenize(str)
-
     if( typeof tokenized[0] == "undefined" ) return null;
 
-    for( n in tokenized ) {
-        tokenized[n]["code"] = ops_lookup[tokenized[n]["type"]+":"+tokenized[n]["style"]]
-    }
-
     // expand brackets
+    var PARENtoken = []
+    
+    try {
+        while( a = tokenized.pop() ) {
+            if( a["code"] != _LEFT_PARENTH_) {
+                PARENtoken.unshift(a)
+            } else {
+                var e = []
+                while( b = PARENtoken.shift() ) {
+                    if( b["code"] != _RIGHT_PARENTH_) {
+                        e.push(b)
+                    } else {
+                        PARENtoken.unshift( { type:"expression", style:"parenthesis", code:_EXPRESSION_, expression:parse(e) } )
+                        break
+                    }
+                }
+            }
+        }
+    } catch(err) {
+        console.log(err)
+        return {type:"error",message:"parenthesie issue: "+err.message}
+    }
 
     // expand NOT 
     // we scan list in reverse to allow NOT of NOT of NOT...
     var NOTtoken = []
-    while ( a = tokenized.pop() ) {
-        if( a["code"] != _OPERATOR_NOT_ ) {
-            NOTtoken.unshift(a)
-            continue
+    try {
+        while ( a = PARENtoken.pop() ) {
+            if( a["code"] != _OPERATOR_NOT_ ) {
+                NOTtoken.unshift(a)
+                continue
+            }
+            b = NOTtoken.shift()
+            if( b["code"] == _OPERATOR_NOT_) {
+                NOTtoken.unshift( b["expression"] )
+            } else {
+                NOTtoken.unshift( { type:"operator", style:"not", code:_OPERATOR_NOT_, expression: b } )
+            }
         }
-        b = NOTtoken.shift()
-        if( b["code"] == _OPERATOR_NOT_) {
-            NOTtoken.unshift( b["expression"] )
-        } else {
-            NOTtoken.unshift( { code:_OPERATOR_NOT_, expression: b } )
-        }
+    } catch(err) {
+        console.log(err)
+        return {type:"error",message:"NOT operator issue: "+err.message}
     }
+
 
     // expand AND 
     var ANDtoken = []
-    while ( a = NOTtoken.shift() ) {
-        if( a["code"] != _OPERATOR_AND_ ) {
-            ANDtoken.push(a)
-            continue
+    try {
+        while ( a = NOTtoken.shift() ) {
+            if( a["code"] != _OPERATOR_AND_ ) {
+                ANDtoken.push(a)
+                continue
+            }
+            b = ANDtoken.pop()
+            a = NOTtoken.shift()
+            if( b["code"]==_OPERATOR_AND_ ) {
+                b["expressions"].push(a)
+                ANDtoken.push( b )
+            } else {
+                ANDtoken.push( { type:"operator", style:"and", code:_OPERATOR_AND_, expressions: [b,a] } )
+            }
         }
-        b = ANDtoken.pop()
-        a = NOTtoken.shift()
-        if( b["code"]==_OPERATOR_AND_ ) {
-            b["expressions"].push(a)
-            ANDtoken.push( b )
-        } else {
-            ANDtoken.push( { code:_OPERATOR_AND_, expressions: [b,a] } )
-        }
+    } catch(err) {
+        console.log(err)
+        return {type:"error",message:"AND operator issue: "+err.message}
     }
 
     // expand OR 
     var ORtoken = []
-    while ( a = ANDtoken.shift() ) {
-        if( a["code"] != _OPERATOR_OR_ ) {
-            ORtoken.push(a)
-            continue
+    try {
+        while ( a = ANDtoken.shift() ) {
+            if( a["code"] != _OPERATOR_OR_ ) {
+                ORtoken.push(a)
+                continue
+            }
+            b = ORtoken.pop()
+            a = ANDtoken.shift()
+            if( b["code"]==_OPERATOR_OR_ ) {
+                b["expressions"].push(a)
+                ORtoken.push( b )
+            } else {
+                ORtoken.push( { type:"operator", style:"or", code:_OPERATOR_OR_, expressions: [b,a] } )
+            }
         }
-        b = ORtoken.pop()
-        a = ANDtoken.shift()
-        if( b["code"]==_OPERATOR_OR_ ) {
-            b["expressions"].push(a)
-            ORtoken.push( b )
-        } else {
-            ORtoken.push( { code:_OPERATOR_OR_, expressions: [b,a] } )
-        }
+    } catch(err) {
+        console.log(err)
+        return {type:"error",message:"OR operator issue: "+err.message}
     }
+
 
     if( ORtoken.length == 0 ) return {type:"error",message:"no tokens found"}           
     if( ORtoken.length > 1  ) return {type:"error",message:"badly parsed string"}           
@@ -379,7 +422,10 @@ function evaluate(line,filter) {
 
         case _OPERATOR_NOT_:
             return ! evaluate(line,filter["expression"] )
-
+    
+        case _EXPRESSION_:
+            return evaluate(line,filter["expression"] )
+        
         default:
             console.log("evaluate() unhandled operand/operator type")
             return false
