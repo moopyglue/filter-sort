@@ -56,7 +56,7 @@ function filterTable(tableID,searchID) {
     var tr = document.getElementById(tableID).getElementsByTagName("tr");
     var fields = document.getElementById(tableID).getAttribute("data-fields").split(",")
     var filter = parse( tokenize(document.getElementById(searchID).value) );
-    pConLog(filter)
+    // pConLog(filter)
     if( filter != null && filter["type"] == "error") {
         return filter["message"]
     }
