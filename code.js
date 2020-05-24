@@ -2,28 +2,42 @@
 // TODO
 //
 //  - it is asummed that tokens are sytactically correct but it is not checked
-//    I have put in ctach statments to avoid crashing during parsing but this 
+//    I have put in catch statments to avoid crashing during parsing but this 
 //    provides bad error messages + might still allow bad instructions through
 //      (e.g. last token can be a NOT or first tokern can be an OR etc...)
 //
 
-// pretty print values to console log - used for denugging only.
+// pretty print values to console log - used for debugging only.
 function pConLog(...args) {
     console.log(JSON.stringify(args,null,4))
 }
 
-function dataToTable(data,tabID,fields="") {
+function dataToTable(data,tabID,fields="",linkon="",linkfunc="") {
 
     var flist, h,i,j,k,l ;
+    pConLog(fields)
+
+    if( data[0][0] != "cols" ) {
+        console.log("ERROR: first line of data should be a 'cols' row")
+        return
+    }
+
+    // setup links
+    links={}
+    if( linkon != "" && linkfunc != "" ) {
+       linkon.split(",").forEach( function(l){ links[l]="x" } )
+    }
 
     // make a list of columns to display in flist + collist
     if( fields=="" ) fields = data[0].join(",");
     flist=fields.split(",");
     collist=[]
+    colnames=[]
     for( h=0 ; h<flist.length ; h++ ) {
         for( i=1 ; i< data[0].length ; i++ ) {
             if( data[0][i] == flist[h] ) {
                 collist.push(i);
+                colnames.push(flist[h])
                 continue;
             }
         }
@@ -35,12 +49,17 @@ function dataToTable(data,tabID,fields="") {
         str += "<th>"+data[0][collist[j]]+"</th>";
     }
     str += "</tr>\n"
-    
+
     // build body
     for ( k=1 ; k<data.length ; k++ ) {
+        if( data[k][0] != "data" ) continue
         str += "<tr>"
         for( l=0 ; l< collist.length ; l++ ) {   
-            str += "<td>"+data[k][collist[l]]+"</td>";
+            if( links[colnames[l]] == null ) {
+                str += "<td>"+data[k][collist[l]]+"</td>";
+            } else {
+                str += '<td><span class=lnk onclick="'+linkfunc+'(\''+colnames[l]+'\',this.textContent)" href=#>'+data[k][collist[l]]+"</span></td>";
+            }
         }
         str += "</tr>\n"
     }
@@ -375,7 +394,6 @@ function parse(tokenized) {
 function evaluate(line,filter) {
 
     // evaluate operator/operands/expressions
-
     switch( filter["code"] ) {
 
         //

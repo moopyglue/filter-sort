@@ -11,7 +11,12 @@
 <h2>My Customers</h2>
 <input type="text" id="myInput" onkeyup="return press(event,13,function(){ filterTable('myTable','myInput',2 )} )" placeholder="Type in your search string..." title="Type in your search">
 <table id=myTable></table>
-<script>   dataToTable(data,"myTable","name,horsepower,acceleration");   </script>
+<script>
+dataToTable(data,"myTable",fields="",linkon="name,modelyear",linkfunc="jump");
+function jump(col,val) {
+  console.log("jump()",col,val)
+}
+</script>
 
 </body>
 </html>
